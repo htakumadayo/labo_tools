@@ -22,6 +22,7 @@ parser.add_argument('-ylabel', default='', help='Set the vertical axis label.')
 parser.add_argument('-xunits', default='', help='Set the horizontal axis units.')
 parser.add_argument('-yunits', default='', help='Set the vertical axis units.')
 parser.add_argument('-t', '--title', default='', help='Set the title.')
+parser.add_argument('-e', '--errors', action='store_true', help='Indicate that the formulas for errors are included in the first rows')
 # parser.add_argument('--hello', action='store_true', help='Prints hello')
 
 class bcolors:
@@ -48,6 +49,13 @@ def print_ok(msg):
     print_colored(bcolors.OKGREEN, msg)
 
 
+class Hd:  # Header Types
+    LABELS = 'labels'
+    ERRORS = 'errors'
+
+def calc_err(expression, X, Y):
+    return eval(expression, {"X": X, "Y": Y})
+
 def main():
     parsed = parser.parse_args(sys.argv[1:])
    
@@ -65,12 +73,18 @@ def main():
     lines = None
     data = None
 
+    header_row_usage = {Hd.LABELS : parsed.labels, Hd.ERRORS : parsed.errors}
+    row_used = np.array(list(header_row_usage.values()))
+    total_row_used = np.sum(row_used)
+    print(row_used)
+    row_indices = dict(zip(header_row_usage.keys(), list(np.cumsum(row_used) - 1)))
+
     with open(csv_filepath, 'r') as fp:
         try:
             content = fp.read()
             reader = csv.reader(StringIO(content), delimiter=delim)
             lines = list(reader)
-            data = np.loadtxt(StringIO(content), unpack=True, skiprows=int(parsed.labels), delimiter=parsed.delim)
+            data = np.loadtxt(StringIO(content), unpack=True, skiprows=total_row_used, delimiter=parsed.delim)
         except ValueError as ve:
             print(str(ve))
             print_error("If the first row is dedicated to labels, consider using -l option.")
@@ -91,12 +105,37 @@ def main():
         xlbl += f" [{parsed.xunits}]"
     if parsed.yunits != '':
         ylbl += f" [{parsed.yunits}]"
+
+    print(labels[0])
+
     plt.xlabel(xlbl)
     plt.ylabel(ylbl)
-    for data_i in range(0, data_type_num, 2):
-        print(data_i)
-        plt.scatter(data[data_i], data[data_i + 1], s=parsed.markersize, label=labels[data_i])
+    
+    # Calculation of error
+    err_formulas = lines[row_indices[Hd.ERRORS]]
+    print(err_formulas)
+    errors = np.zeros_like(data)
+    for col in range(0, data_type_num, 2):
+        x_err = err_formulas[col]
+        y_err = err_formulas[col + 1]
+        x_errors = np.zeros(data.shape[1])
+        y_errors = np.zeros(data.shape[1])
+        
+        if parsed.errors:
+            for row in range(0, data[col].size):
+                x_errors[row] = calc_err(x_err, data[col][row], data[col+1][row])
+                y_errors[row] = calc_err(y_err, data[col][row], data[col+1][row])
+        
+        errors[col], errors[col+1] = x_errors, y_errors
 
+    for data_i in range(0, data_type_num, 2):
+        x_data, y_data = data[data_i], data[data_i + 1]
+        x_err, y_err = errors[data_i], errors[data_i + 1]
+        if parsed.errors:
+            plt.errorbar(x_data, y_data, xerr=x_err, yerr=y_err, label=labels[data_i], marker='o', linestyle='', capsize=3, ecolor='black')
+        else:
+            plt.scatter(x_data, y_data, s=parsed.markersize, label=labels[data_i])
+        
     plt.title(parsed.title)
     plt.legend()
     plt.show()

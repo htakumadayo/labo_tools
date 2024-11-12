@@ -5,7 +5,7 @@ OBJECTIVES OF THIS TOOL:
 - incertitude on Slope
 - Calculate mean, variation, stddev
 - CSV support
-- Automatically calculate error from formula?
+- Automatically calculate error from formula? + Parameters
 - Convenient functions for plotting: automatic italics/units, coloring, automatic labelling/legends...
 - Warning system? (e.g. No units, )
 - Directly ouput image
@@ -14,4 +14,4 @@ Options;
 - multiple graphs: if enabled, use labels as graph labels not axis 
 - double columns: two columns for x and y for each data.
 - Different shapes
-
+-
