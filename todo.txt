@@ -1,0 +1,17 @@
+OBJECTIVES OF THIS TOOL:
+
+- Linear regression, possibility to chose the range
+- Plot with correct fontsize, errorbars
+- incertitude on Slope
+- Calculate mean, variation, stddev
+- CSV support
+- Automatically calculate error from formula?
+- Convenient functions for plotting: automatic italics/units, coloring, automatic labelling/legends...
+- Warning system? (e.g. No units, )
+- Directly ouput image
+
+Options;
+- multiple graphs: if enabled, use labels as graph labels not axis 
+- double columns: two columns for x and y for each data.
+- Different shapes
+
