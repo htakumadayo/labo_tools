@@ -5,6 +5,7 @@ from io import StringIO
 import pathlib as pl
 import sys
 import csv
+from config import *
 
 parser = ap.ArgumentParser(
         prog='LaboDraw',
@@ -16,13 +17,18 @@ parser = ap.ArgumentParser(
 parser.add_argument('filename', action='store', help='CSV file which the data is read from')
 parser.add_argument('-l', '--labels', action='store_true', help='Indicate that the first row is used for data labels')
 parser.add_argument('-d', '--delim', default=',', help='Set the CSV delimiter (default , )')
-parser.add_argument('-m', '--markersize', default=50, type=int, help='Set the marker size of plt.scatter')
 parser.add_argument('-xlabel', default='', help='Set the horizontal axis label.')
 parser.add_argument('-ylabel', default='', help='Set the vertical axis label.')
 parser.add_argument('-xunits', default='', help='Set the horizontal axis units.')
 parser.add_argument('-yunits', default='', help='Set the vertical axis units.')
 parser.add_argument('-t', '--title', default='', help='Set the title.')
 parser.add_argument('-e', '--errors', action='store_true', help='Indicate that the formulas for errors are included in the first rows')
+parser.add_argument('--export', default="", help="When this option is set, save the figure with the given name. Example: --export Test.png")
+parser.add_argument('-s', '--shapes', action='append', help="Specifies the shapes of each dot. An argument is used\
+                    for a pair of columns, the first corresponding to the most left column. See https://matplotlib.org/stable/api/markers_api.html\
+                    for available options.")
+parser.add_argument('-p', '--param', action='append', nargs=2, metavar=('Name', 'Value'), help="Define a parameter that is used in error calculation.")
+
 # parser.add_argument('--hello', action='store_true', help='Prints hello')
 
 class bcolors:
@@ -53,8 +59,23 @@ class Hd:  # Header Types
     LABELS = 'labels'
     ERRORS = 'errors'
 
-def calc_err(expression, X, Y):
-    return eval(expression, {"X": X, "Y": Y})
+def convert_params_to_float(params):
+    for i in range(len(params)):
+        try:
+            params[i][1] = float(params[i][1])
+        except ValueError as e:
+            print_err(f"An error occured while converting parameter {params[0]} to float: {str(e)}")
+            params[i][1] = 0
+    return params
+
+def calc_err(expression, X, Y, params):
+    try:
+        param_dict = {"X": X, "Y": Y}
+        param_dict.update(convert_params_to_float(params))
+        return eval(expression, param_dict)
+    except Exception as e:
+        print_error(f"An error occured while evaluating error expression {expression}: {str(e)}")
+        return 0
 
 def main():
     parsed = parser.parse_args(sys.argv[1:])
@@ -86,7 +107,6 @@ def main():
             lines = list(reader)
             data = np.loadtxt(StringIO(content), unpack=True, skiprows=total_row_used, delimiter=parsed.delim)
         except ValueError as ve:
-            print(str(ve))
             print_error("If the first row is dedicated to labels, consider using -l option.")
             return 1
     
@@ -106,14 +126,11 @@ def main():
     if parsed.yunits != '':
         ylbl += f" [{parsed.yunits}]"
 
-    print(labels[0])
-
-    plt.xlabel(xlbl)
-    plt.ylabel(ylbl)
+    plt.xlabel(xlbl, fontsize=label_font_size)
+    plt.ylabel(ylbl, fontsize=label_font_size)
     
     # Calculation of error
     err_formulas = lines[row_indices[Hd.ERRORS]]
-    print(err_formulas)
     errors = np.zeros_like(data)
     for col in range(0, data_type_num, 2):
         x_err = err_formulas[col]
@@ -123,21 +140,27 @@ def main():
         
         if parsed.errors:
             for row in range(0, data[col].size):
-                x_errors[row] = calc_err(x_err, data[col][row], data[col+1][row])
-                y_errors[row] = calc_err(y_err, data[col][row], data[col+1][row])
+                x_errors[row] = calc_err(x_err, data[col][row], data[col+1][row], parsed.param)
+                y_errors[row] = calc_err(y_err, data[col][row], data[col+1][row], parsed.param)
         
         errors[col], errors[col+1] = x_errors, y_errors
 
     for data_i in range(0, data_type_num, 2):
         x_data, y_data = data[data_i], data[data_i + 1]
         x_err, y_err = errors[data_i], errors[data_i + 1]
+        marker = ('o' if len(parsed.shapes) <= data_i // 2 else parsed.shapes[data_i // 2])
         if parsed.errors:
-            plt.errorbar(x_data, y_data, xerr=x_err, yerr=y_err, label=labels[data_i], marker='o', linestyle='', capsize=3, ecolor='black')
+            plt.errorbar(x_data, y_data, xerr=x_err, yerr=y_err, markersize=dots_size, label=labels[data_i], marker=marker,
+                         linestyle='', capsize=cap_size, elinewidth=ethickness, markeredgewidth=ethickness, ecolor='black')
         else:
-            plt.scatter(x_data, y_data, s=parsed.markersize, label=labels[data_i])
+            plt.scatter(x_data, y_data, markersize=dots_size, label=labels[data_i], marker=marker)
         
     plt.title(parsed.title)
-    plt.legend()
+    plt.legend(fontsize=legend_font_size)
+    plt.grid(show_grid)
+    
+    if parsed.export != "":
+        plt.savefig(parsed.export, format="png")
     plt.show()
 
     return 0
