@@ -24,11 +24,11 @@ parser.add_argument('-yunits', default='', help='Set the vertical axis units.')
 parser.add_argument('-t', '--title', default='', help='Set the title.')
 parser.add_argument('-e', '--errors', action='store_true', help='Indicate that the formulas for errors are included in the first rows')
 parser.add_argument('--export', default="", help="When this option is set, save the figure with the given name. Example: --export Test.png")
-parser.add_argument('-s', '--shapes', action='append', help="Specifies the shapes of each dot. An argument is used\
+parser.add_argument('-s', '--shape', action='append', help="Specifies the shape of dots for one scatter plot. An argument is used\
                     for a pair of columns, the first corresponding to the most left column. See https://matplotlib.org/stable/api/markers_api.html\
                     for available options.")
 parser.add_argument('-p', '--param', action='append', nargs=2, metavar=('Name', 'Value'), help="Define a parameter that is used in error calculation.")
-
+parser.add_argument('--allfit', action='store_true', help="Perform linear fit for all data.")
 # parser.add_argument('--hello', action='store_true', help='Prints hello')
 
 class bcolors:
@@ -93,6 +93,7 @@ def main():
 
     lines = None
     data = None
+    mask = None
 
     header_row_usage = {Hd.LABELS : parsed.labels, Hd.ERRORS : parsed.errors}
     row_used = np.array(list(header_row_usage.values()))
@@ -100,21 +101,24 @@ def main():
     print(row_used)
     row_indices = dict(zip(header_row_usage.keys(), list(np.cumsum(row_used) - 1)))
 
+    # Load data
     with open(csv_filepath, 'r') as fp:
         try:
             content = fp.read()
             reader = csv.reader(StringIO(content), delimiter=delim)
             lines = list(reader)
-            data = np.loadtxt(StringIO(content), unpack=True, skiprows=total_row_used, delimiter=parsed.delim)
+            masked_array = np.genfromtxt(csv_filepath, unpack=True, skip_header=total_row_used, delimiter=parsed.delim, usemask=True, filling_values=1e+20)
+            data, mask = masked_array.data, masked_array.mask
         except ValueError as ve:
+            print(str(ve))
             print_error("If the first row is dedicated to labels, consider using -l option.")
             return 1
-    
     data_type_num = data.shape[0]
     if data_type_num < 2:
         print_error("There are less than two data columns; nothing to show")
         return 1
-    
+   
+    # Labeling
     empty = data_type_num * ['']
     labels = (lines[0] if parsed.labels else empty)
     if not parsed.labels:
@@ -130,30 +134,33 @@ def main():
     plt.ylabel(ylbl, fontsize=label_font_size)
     
     # Calculation of error
-    err_formulas = lines[row_indices[Hd.ERRORS]]
-    errors = np.zeros_like(data)
-    for col in range(0, data_type_num, 2):
-        x_err = err_formulas[col]
-        y_err = err_formulas[col + 1]
-        x_errors = np.zeros(data.shape[1])
-        y_errors = np.zeros(data.shape[1])
-        
-        if parsed.errors:
-            for row in range(0, data[col].size):
-                x_errors[row] = calc_err(x_err, data[col][row], data[col+1][row], parsed.param)
-                y_errors[row] = calc_err(y_err, data[col][row], data[col+1][row], parsed.param)
-        
-        errors[col], errors[col+1] = x_errors, y_errors
+    if parsed.errors:
+        err_formulas = lines[row_indices[Hd.ERRORS]]
+        errors = np.zeros_like(data)
+        for col in range(0, data_type_num, 2):
+            x_err = err_formulas[col]
+            y_err = err_formulas[col + 1]
+            x_errors = np.zeros(data.shape[1])
+            y_errors = np.zeros(data.shape[1])
+            
+            if parsed.errors:
+                for row in range(0, data[col].size):
+                    x_errors[row] = calc_err(x_err, data[col][row], data[col+1][row], parsed.param)
+                    y_errors[row] = calc_err(y_err, data[col][row], data[col+1][row], parsed.param)
+            
+            errors[col], errors[col+1] = x_errors, y_errors
 
+    # Actual plotting
     for data_i in range(0, data_type_num, 2):
-        x_data, y_data = data[data_i], data[data_i + 1]
-        x_err, y_err = errors[data_i], errors[data_i + 1]
-        marker = ('o' if len(parsed.shapes) <= data_i // 2 else parsed.shapes[data_i // 2])
+        mask_i = np.logical_not(mask[data_i] & mask[data_i + 1])
+        x_data, y_data = data[data_i][mask_i], data[data_i + 1][mask_i]
+        marker = ('o' if parsed.shape is None or len(parsed.shape) <= data_i // 2 else parsed.shape[data_i // 2])
         if parsed.errors:
+            x_err, y_err = errors[data_i][mask_i], errors[data_i + 1][mask_i]
             plt.errorbar(x_data, y_data, xerr=x_err, yerr=y_err, markersize=dots_size, label=labels[data_i], marker=marker,
                          linestyle='', capsize=cap_size, elinewidth=ethickness, markeredgewidth=ethickness, ecolor='black')
         else:
-            plt.scatter(x_data, y_data, markersize=dots_size, label=labels[data_i], marker=marker)
+            plt.scatter(x_data, y_data, s=dots_size, label=labels[data_i], marker=marker)
         
     plt.title(parsed.title)
     plt.legend(fontsize=legend_font_size)
